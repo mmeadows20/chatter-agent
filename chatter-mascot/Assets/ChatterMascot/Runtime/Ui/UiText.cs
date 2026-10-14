@@ -56,6 +56,7 @@ namespace ChatterMascot.Ui
         // ── XR ──────────────────────────────────
         public abstract string XrLoadingModel { get; }
         public abstract string XrActualSize(string cm);
+        public abstract string XrVersion(string version);
         public abstract string XrSyncAssets { get; }
         public abstract string XrSyncNow { get; }
         public abstract string XrSyncing { get; }

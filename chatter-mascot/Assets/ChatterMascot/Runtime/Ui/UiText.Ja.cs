@@ -37,6 +37,7 @@ namespace ChatterMascot.Ui
         // ── XR ──────────────────────────────────
         public override string XrLoadingModel => "モデルを読み込んでいます";
         public override string XrActualSize(string cm) => $"実寸（{cm} cm）";
+        public override string XrVersion(string version) => $"バージョン {version}";
         public override string XrSyncAssets => "モデルとモーションを同期";
         public override string XrSyncNow => "今すぐ同期";
         public override string XrSyncing => "同期しています…";

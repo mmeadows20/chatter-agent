@@ -121,6 +121,11 @@ namespace ChatterMascot.Settings
             items.Add(SettingSpec.Button(
                 SettingKeys.ResetAll, text.XrResetAll, note: text.XrResetAllNote));
 
+            // ── 版 ───────────────────────────────────────────
+            // ★ 押す行ではないが、報告がどのビルドのものかを確かめる場所として末尾に置く。
+            //   行が増えた分だけ全体が縮む（上の「接続」の ★）ので、見出し1行に留める
+            items.Add(SettingSpec.Section(text.XrVersion(c.AppVersion)));
+
             return items;
         }
 
