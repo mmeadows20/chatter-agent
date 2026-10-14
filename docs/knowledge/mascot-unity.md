@@ -565,8 +565,33 @@ Unity 本体の作り（「`-runTests` に `-quit` を付けない」「`-execut
 `--android-target-sdk-version` / `--android-symbol-type` / `--android-version-code`）は使わない。**
 `--execute-method` と併用すると CLI は `BuildPlayerOptions` を握らないので、これらが honor される
 保証が無い。出力形式の書き手を2つに持つと、honor されなかったときに黙って壊れた成果物ができる。
-targetSdk / symbol / versionCode は `ProjectSettings` が持ち、署名は値が argv に出るのでここでは
-行わない。
+targetSdk / symbol は `ProjectSettings` が持ち、versionCode は release タグから `BuildScript` が決め、
+署名は値が argv に出るので CLI には渡さず、`BuildScript.BuildAndroid` が環境変数から読んで行う（→ [`mascot.md`](../mascot.md)「署名と版」）。
+
+★ **`PlayerSettings.Android.keystoreName` の setter に空文字を渡すと `'{inproject}: '` が保存される。**
+release 署名の後に「コミットされている空へ戻す」つもりで `""` を入れると、`ProjectSettings.asset` の
+`AndroidKeystoreName` が `'{inproject}: '` に書き換わって残る。`useCustomKeystore` が false なので
+署名には効かないが、release ビルドのたびに追跡ファイルが汚れる。batchmode のビルドは終わるまでに
+`ProjectSettings.asset` を保存するので、ビルドの間だけ PlayerSettings を書き換えても、
+setter 経由ではコミットされた値に戻せない。
+だから release の設定は C# で戻さず、`build-android.sh` が `ProjectSettings.asset` を git から戻す
+（中断でも戻り、setter の正規化にも左右されない）。
+
+★ **Unity は署名のパスワードを `Library/Bee` の中へ平文で書く。** Gradle の書き出し
+（`launcher/build.gradle` と、`Library/Bee/artifacts/Android/Gradle` の下の写し）だけでなく、Bee の
+入力データ（`Library/Bee/Player*-inputdata.json`）やログにも入る。次の Android ビルドで書き直されるまで
+残り、`Library` を複製すると一緒に移る。書かれる場所を1つずつ追うと Unity の版で漏れるので、release では
+ビルドの前後に `Library/Bee` ごと消す（前に消すのは、複製元の古い Gradle の出力を混ぜないためでもある）。
+引き換えに、release とその次のビルドはキャッシュ無しになる。
+
+★ **`Library` の外、Gradle のキャッシュにも残る。** Gradle は `launcher/build.gradle` をコンパイルして
+`GRADLE_USER_HOME`（既定は `~/.gradle`）の下に置き、`signingConfigs` のクロージャのクラスにはパスワードが
+文字列の定数として入る（`caches/<Gradle の版>/groovy-dsl/` と `caches/jars-9/`）。Unity は Gradle を
+`-g` 無しで起動するので、環境変数の `GRADLE_USER_HOME` がそのまま効く。release では使い捨ての
+一時ディレクトリを `GRADLE_USER_HOME` にして、ビルドの後に消す。キャッシュの中の置き場所を追わずに済み、
+`~/.gradle` に何も残らない。引き換えに、Gradle の依存（Android Gradle Plugin など）を release のたびに
+ダウンロードし直す。Unity はビルドの最後に `--stop` でデーモンを止めるので、デーモンも残らない。
+`.class` の中の定数を探すときは、バイナリを飛ばさない grep（`LC_ALL=C /usr/bin/grep -rlaF`）を使う。
 
 `configure-android.sh` / `run-android.sh` は Unity を起動しないので、
 Unity CLI へ寄せる対象ではない。

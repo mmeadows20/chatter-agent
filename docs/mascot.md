@@ -684,6 +684,72 @@ B・C どちらの経路でもこのポートへ向ける。C（`configure-andro
   接続先を明示するならポートは URL に書く）。自動検出は最初に見つかった1台に繋ぐので、サーバーを複数立てているときは
   接続先を明示する
 
+### 署名と版
+
+環境変数なしのビルドは Unity 既定の debug keystore で署名する。手元の確認用で、debug 鍵は
+マシンごとに違うので、別のマシンでビルドした APK は上書きインストールできない。同じ端末で debug と
+release を行き来するときも同じで、どちらもアンインストールが要り、端末の `settings.json` = ペアリングの
+トークンごと消える。**配る APK は release keystore で署名する。**
+
+```bash
+git tag mascot-v0.2.0        # 配るコミットで。版はこのタグから決まる（下の「版」）
+CHATTER_MASCOT_KEYSTORE=<keystore の絶対パス> ./scripts/build-android.sh
+```
+
+パスワードは `CHATTER_MASCOT_KEYSTORE_PASS`、無ければキーチェーン（サービス名
+`chatter-mascot-keystore`）から読む。キーチェーンなら平文がシェルの履歴や rc に残らない。
+`CHATTER_MASCOT_KEYSTORE` を指定したのにパスワードが無い／ファイルが無いときは、debug 鍵には
+落とさずビルドを止める。keystore のパスは相対でもよい（スクリプトが絶対パスにする）。alias は
+`chattermascot` 固定。
+
+ビルドの間は、Unity と Gradle がパスワードを平文で書き残す。書く先はビルドのキャッシュ（`Library/Bee`）と、
+Gradle がビルドスクリプトをコンパイルしたキャッシュ（`GRADLE_USER_HOME`。既定は `~/.gradle`）。
+`build-android.sh` は release のとき、`Library/Bee` をビルドの前後で丸ごと消し、Gradle には使い捨ての
+`GRADLE_USER_HOME` を使わせて後で消すので、ビルドの後には残らない。引き換えに、release とその次のビルドは
+キャッシュ無しになり、release のたびに Gradle の依存をダウンロードし直す（ネットワークが要る）。
+
+**鍵の作り方（一度だけ）。** keytool は Unity 同梱のもの
+（`/Applications/Unity/Hub/Editor/<版>/PlaybackEngines/AndroidPlayer/OpenJDK/bin/keytool`）。
+パスワードを argv に出さないため `-storepass:env` / `-keypass:env` を使う。
+
+```bash
+read -rs CHATTER_MASCOT_KEYSTORE_PASS && export CHATTER_MASCOT_KEYSTORE_PASS
+keytool -genkeypair -keystore <path> -storetype PKCS12 -alias chattermascot \
+  -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=ChatterMascot" \
+  -storepass:env CHATTER_MASCOT_KEYSTORE_PASS -keypass:env CHATTER_MASCOT_KEYSTORE_PASS
+
+# キーチェーンへ登録（security -i は標準入力からコマンドを読むので、値が argv に出ない。
+# 値を " で括って渡すので、パスワードに " と \ を使わない。Unity が Gradle の単一引用符の
+# 文字列に埋め込むので ' も使わない）
+echo "add-generic-password -a \"$USER\" -s chatter-mascot-keystore -w \"$CHATTER_MASCOT_KEYSTORE_PASS\" -U" | security -i
+unset CHATTER_MASCOT_KEYSTORE_PASS
+```
+
+★ **keystore とパスワードの両方をバックアップする。どちらか一方を失っても、同じアプリとして更新を
+配れなくなる**（以後は全員アンインストール → 再ペアリング）。keystore はリポジトリの外に置き、
+パスワードは keystore と同じ場所に置かない。
+
+**版はタグから決める。** タグは `mascot-v<MAJOR>.<MINOR>.<PATCH>`（各数は 0〜99・先頭ゼロ不可、
+プレリリース接尾辞は不可）。`bundleVersion`（Android の「アプリ情報」に出る、人が読む版）は
+`MAJOR.MINOR.PATCH`、versionCode は `MAJOR*10000 + MINOR*100 + PATCH`（下がると上書きインストールが
+拒まれるので、版は単調に上げる。`mascot-v0.0.0` は versionCode が 0 になるので不可）。規則は
+`BuildScript.TryParseReleaseTag` にある。`mascot-` を付けるのは、コンポーネントごとに版が別で、
+素の `v` ではリポジトリ全体の版に見えるため。
+
+release ビルドは、作業ツリーがきれいで HEAD に `mascot-v*` タグがちょうど1つ付いているときだけ通る。
+タグは `mascot-v*` の中で最大でなければならない。版はビルドの間だけ `PlayerSettings` に入れ、
+終わると（中断しても）`build-android.sh` が `ProjectSettings.asset` を git から戻す。コミットされている
+`bundleVersion: 0.0.0-dev` / versionCode `1` は手元ビルドの印なので、**`ProjectSettings.asset` の版を
+手で書き換えない**（CI が止める）。版の付け方と、タグを付けて配るまでの手順は
+[`release.md`](./release.md)。
+
+タグ駆動にしたのは、版を上げるためだけのコミットが要らず上げ忘れが起きないこと、APK・コミット・
+タグが1対1になること、CI のチェックアウトでもそのまま動くことのため。
+
+**確かめ方。** Unity 同梱 SDK の `build-tools/<版>/apksigner verify --print-certs <apk>` で証明書の
+DN を見る。release 鍵なら `CN=ChatterMascot`、debug 鍵なら `CN=Android Debug`。版は同じ
+build-tools の `aapt2 dump badging <apk>` が出す `versionName` / `versionCode` で見る。
+
 ### Android 側の必須設定
 
 `AndroidManifest.xml` に最終的に要るもの（`INTERNET` / `usesCleartextTraffic` 以外はビルド時に
